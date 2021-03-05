@@ -1,7 +1,9 @@
-const e = require('express');
 const express = require('express');
+const expressAsyncHandler = require('express-async-handler');
 const asynHandler = require('express-async-handler');
-const User = require('../models/User')
+const authMiddleware = require('../middlewares/authMiddleware');
+const User = require('../models/User');
+const generateToken = require('../utils/generateToken');
 
 const usersRoute = express.Router();
 
@@ -16,7 +18,13 @@ usersRoute.post('/register',
         }
         const userCreated = await User.create({ email, name, password });
 
-        res.send(userCreated);
+        res.json({
+            _id: userCreated._id,
+            name: userCreated.name,
+            email: userCreated.email,
+            password: userCreated.password,
+            token: generateToken(userCreated._id),
+        });
 
     })
 );
@@ -27,14 +35,16 @@ usersRoute.post('/login',
         const { email, password } = req.body;
 
         const user = await User.findOne({ email });
-        if (user) {
+
+        if (user && (await user.isPasswordMatch(password))) {
             res.status(200);
 
             res.json({
                 _id: user._id,
                 name: user.name,
                 email: user.email,
-                password: user.password
+                password: user.password,
+                token: generateToken(user._id),
             });
         } else {
             res.status(401);
@@ -44,13 +54,35 @@ usersRoute.post('/login',
 );
 
 //UPDATE
-usersRoute.put('/update', (req, res) => {
-    res.send(`Update route`);
-});
+usersRoute.put('/update',
+    authMiddleware,
+    expressAsyncHandler(async (req, res) => {
+
+        const user = await User.findById(req.user._id);
+
+        if (user) {
+            user.name = req.body.name || user.name;
+            user.email = req.body.email || user.email;
+            if (req.body.password) {
+                user.password = req.body.password || user.password;
+            }
+
+            const updatedUser = await this.use.save();
+
+            res.json({
+                _id: updatedUser._id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                token: generateToken(updatedUser._id)
+            });
+        }
+    })
+);
 
 //FETCH
-usersRoute.get('/', (req, res) => {
-    res.send(`Fetch route`);
+usersRoute.get('/', authMiddleware, (req, res) => {
+    console.log(req.headers);
+    res.send(req.user);
 });
 
 //DELETE
